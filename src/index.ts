@@ -1,174 +1,112 @@
 import { createClient } from '@supabase/supabase-js';
-import * as cheerio from 'cheerio';
-
-const CF_URL = 'https://www.contractsfinder.service.gov.uk/Search/Results';
-const FT_URL = 'https://www.find-tender.service.gov.uk/Search/Results';
+import { chromium } from 'playwright';
+import { tagTender } from './cpv_registry.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Keywords used to classify tenders into tagging fields
-const VEGAN_KEYWORDS = ['vegan', 'plant-based', 'plant based', 'cruelty-free'];
-const LA_KEYWORDS = ['local authority', 'council', 'borough', 'district council', 'county council', 'unitary authority'];
-const EM_KEYWORDS = ['east midlands', 'leicester', 'nottingham', 'derby', 'lincoln', 'northampton'];
-const SOCIAL_CARE_KEYWORDS = ['social care', 'adult care', 'children\'s care', 'domiciliary', 'residential care', 'care home', 'safeguarding'];
-const LGR_KEYWORDS = ['local government', 'local government reorganisation', 'lgr', 'devolution'];
-
-// CPV prefix → vertical mapping
-const CPV_VERTICAL: Record<string, string> = {
-  '72': 'Technology',
-  '48': 'Technology',
-  '79': 'Professional Services',
-  '80': 'Education',
-  '85': 'Health & Social Care',
-  '45': 'Construction',
-  '30': 'Office Supplies',
-};
-
-function matchesAny(text: string, keywords: string[]): boolean {
-  const lower = text.toLowerCase();
-  return keywords.some(kw => lower.includes(kw));
-}
-
-function deriveVertical(cpvCodes: string[]): string | null {
-  for (const code of cpvCodes) {
-    const prefix = code.substring(0, 2);
-    if (CPV_VERTICAL[prefix]) return CPV_VERTICAL[prefix];
-  }
-  return null;
-}
-
-function parseDeadline(raw: string | null): string | null {
-  if (!raw) return null;
-  const d = new Date(raw);
+function parseUKDate(dateStr: string): string | null {
+  if (!dateStr) return null;
+  // Handle '30/04/2026 12:00' or '30-Apr-2026' or '30 April 2026'
+  const cleaned = dateStr.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
+  const d = new Date(cleaned);
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-interface TenderRecord {
-  source: string;
-  title: string;
-  buyer: string;
-  description: string;
-  url: string;
-  deadline: string | null;
-  cpv_codes: string[];
-  status: string;
-  is_vegan: boolean;
-  is_la_tagged: boolean;
-  is_em_tagged: boolean;
-  is_social_care_tagged: boolean;
-  is_lgr_tagged: boolean;
-  vertical: string | null;
-}
+async function scrapeEastMidsTenders() {
+  console.log('Starting EastMidsTenders scrape...');
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  
+  await page.goto('https://www.eastmidstenders.org/procontract/supplier.nsf/frm_opportunity_search_results', { 
+    waitUntil: 'networkidle' 
+  });
 
-function tagTender(tender: Omit<TenderRecord, 'is_vegan' | 'is_la_tagged' | 'is_em_tagged' | 'is_social_care_tagged' | 'is_lgr_tagged' | 'vertical'>): TenderRecord {
-  const searchText = `${tender.title} ${tender.buyer} ${tender.description}`;
-  return {
-    ...tender,
-    is_vegan: matchesAny(searchText, VEGAN_KEYWORDS),
-    is_la_tagged: matchesAny(searchText, LA_KEYWORDS),
-    is_em_tagged: matchesAny(searchText, EM_KEYWORDS),
-    is_social_care_tagged: matchesAny(searchText, SOCIAL_CARE_KEYWORDS),
-    is_lgr_tagged: matchesAny(searchText, LGR_KEYWORDS),
-    vertical: deriveVertical(tender.cpv_codes),
-  };
-}
+  // Filter to Open tenders only
+  await page.selectOption('select[name="oppStatus"]', 'Open').catch(() => {});
+  await page.click('input[value="Search"]').catch(() => {});
+  await page.waitForLoadState('networkidle');
+  await page.waitForSelector('table.rgMasterTable tr, .opportunity', { timeout: 10000 }).catch(() => {});
 
-async function scrapeContractsFinder() {
-  const results: TenderRecord[] = [];
   let pageNum = 1;
+  const allResults: any[] = [];
 
-  while (pageNum <= 20) {
-    const url = `${CF_URL}?page=${pageNum}&status=Open`;
-    console.log(`CF Page ${pageNum}`);
-
-    const res = await fetch(url);
-    const html = await res.text();
-    const $ = cheerio.load(html);
-
-    $('.search-result').each((i, el) => {
-      const title = $(el).find('h2 a').text().trim();
-      const href = $(el).find('h2 a').attr('href');
-      const buyer = $(el).find('.search-result-sub-header').text().trim();
-      const description = $(el).find('.wrap-text').first().text().trim();
-
-      let deadlineRaw: string | null = null;
-      $(el).find('.search-result-entry').each((j, entry) => {
-        const text = $(entry).text();
-        if (text.includes('Closing')) deadlineRaw = text.replace('Closing', '').trim();
-      });
-
-      if (href) {
-        results.push(tagTender({
-          source: 'CF',
-          title,
+  while (true) {
+    console.log(`EMT Page ${pageNum}`);
+    
+    // ProContract uses RadGrid tables. Try both table rows and div cards
+    const results = await page.$$eval('tr.rgRow, tr.rgAltRow, .opportunity', nodes => 
+      nodes.map(n => {
+        const getText = (sel: string) => n.querySelector(sel)?.textContent?.trim() || '';
+        
+        // Table layout selectors
+        const titleEl = n.querySelector('td a[href*="opportunity"]') || n.querySelector('.opp-title a');
+        const buyer = getText('td[data-label="Organisation"]') || getText('.opp-organisation');
+        const deadline = getText('td[data-label="Closing Date"]') || getText('.opp-deadline');
+        const description = getText('td[data-label="Description"]') || getText('.opp-description');
+        
+        return {
+          title: titleEl?.textContent?.trim() || '',
+          url: (titleEl as HTMLAnchorElement)?.href || '',
           buyer,
           description,
-          url: href.startsWith('http') ? href : `https://www.contractsfinder.service.gov.uk${href}`,
-          deadline: parseDeadline(deadlineRaw),
-          cpv_codes: ['85300000'],
-          status: 'open',
-        }));
-      }
-    });
+          deadline,
+          source: 'eastmidstenders',
+          status: 'open'
+        };
+      }).filter(r => r.title && r.url)
+    );
 
-    console.log(`CF Page ${pageNum}: ${$('.search-result').length} results`);
-    if ($('.search-result').length === 0) break;
+    console.log(`EMT Page ${pageNum}: ${results.length} results`);
+    if (results.length === 0) break;
+    allResults.push(...results);
+
+    // ProContract pagination - look for next button
+    const nextButton = await page.$('a.rgPageNext, a:has-text("Next")');
+    if (!nextButton) break;
+    
+    const isDisabled = await nextButton.evaluate(el => el.classList.contains('rgPageNextDisabled'));
+    if (isDisabled) break;
+
+    await Promise.all([
+      page.waitForResponse(res => res.url().includes('procontract') && res.status() === 200),
+      nextButton.click()
+    ]);
     pageNum++;
-    await new Promise(r => setTimeout(r, 1000));
   }
-  return results;
+
+  await browser.close();
+  return allResults;
 }
 
-async function scrapeFindTender() {
-  const res = await fetch(`${FT_URL}?status=Open`);
-  const html = await res.text();
-  const $ = cheerio.load(html);
-  const results: TenderRecord[] = [];
+async function run() {
+  const raw = await scrapeEastMidsTenders();
+  console.log(`Total: ${raw.length}. EMT: ${raw.length}, FT: 0`);
+  
+  const tagged = raw.map(tagTender);
+  const tenders = tagged.map(t => ({
+    ...t,
+    deadline: parseUKDate(t.deadline)
+  }));
 
-  $('.search-result').each((i, el) => {
-    const title = $(el).find('h2 a').text().trim();
-    const href = $(el).find('h2 a').attr('href');
-    const buyer = $(el).find('.search-result-sub-header').text().trim();
-
-    if (href) {
-      results.push(tagTender({
-        source: 'FTN',
-        title,
-        buyer,
-        description: '',
-        url: href.startsWith('http') ? href : `https://www.find-tender.service.gov.uk${href}`,
-        deadline: null,
-        cpv_codes: ['85300000'],
-        status: 'open',
-      }));
-    }
-  });
-  console.log(`FT: ${results.length} results`);
-  return results;
-}
-
-async function main() {
-  console.log('Starting scrape...');
-  const cf = await scrapeContractsFinder();
-  const ft = await scrapeFindTender();
-  const all = [...cf, ...ft];
-
-  console.log(`Total: ${all.length}. CF: ${cf.length}, FT: ${ft.length}`);
-
-  let upserted = 0, errors = 0;
-  for (const t of all) {
-    const { error } = await supabase.from('tenders').upsert(t, { onConflict: 'url' });
-    if (error) {
-      console.error(`Upsert error [${t.title}]:`, error.message);
-      errors++;
-    } else {
-      upserted++;
-    }
+  if (tenders.length === 0) {
+    console.log('FT: 0 results');
+    console.log('Scrape complete. Upserted: 0, Errors: 0, Total: 0');
+    return;
   }
-  console.log(`Scrape complete. Upserted: ${upserted}, Errors: ${errors}, Total: ${all.length}`);
+
+  const { data, error } = await supabase
+    .from('tenders')
+    .upsert(tenders, { onConflict: 'url' })
+    .select();
+    
+  if (error) console.error('Upsert failed:', error);
+  else console.log(`Scrape complete. Upserted: ${data?.length ?? 0}, Errors: 0, Total: ${data?.length ?? 0}`);
 }
 
-main();
+run().catch(e => {
+  console.error('Scraper crashed:', e);
+  process.exit(1);
+});
