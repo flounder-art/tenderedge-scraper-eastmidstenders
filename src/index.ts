@@ -3,8 +3,8 @@ import { chromium } from 'playwright';
 import { tagTender } from './cpv_registry.js';
 
 const supabase = createClient(
-  process.env.https://dwiioeurbbvhsijvrzsq.supabase.co!,
-  process.env.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3aWlvZXVyYmJ2aHNpanZyenNxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjI3NDUxNiwiZXhwIjoyMDkxODUwNTE2fQ.tuk094g1MjkMpgzfnl-tB_UGcft5JQrbv_BAhiOSNq0!
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 function parseDate(dateStr: string): string | null {
@@ -89,3 +89,5 @@ scrapeEastMidsTenders().catch(e => {
   console.error('Scraper crashed:', e);
   process.exit(1);
 });
+
+86 lines hidden
