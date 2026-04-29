@@ -3,110 +3,89 @@ import { chromium } from 'playwright';
 import { tagTender } from './cpv_registry.js';
 
 const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.https://dwiioeurbbvhsijvrzsq.supabase.co!,
+  process.env.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3aWlvZXVyYmJ2aHNpanZyenNxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjI3NDUxNiwiZXhwIjoyMDkxODUwNTE2fQ.tuk094g1MjkMpgzfnl-tB_UGcft5JQrbv_BAhiOSNq0!
 );
 
-function parseUKDate(dateStr: string): string | null {
+function parseDate(dateStr: string): string | null {
   if (!dateStr) return null;
-  // Handle '30/04/2026 12:00' or '30-Apr-2026' or '30 April 2026'
-  const cleaned = dateStr.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
+  // Handles "23/05/2026 12:00" or "23 May 2026"
+  const cleaned = dateStr.replace(/at.*/, '').trim();
   const d = new Date(cleaned);
-  return isNaN(d.getTime()) ? null : d.toISOString();
+  return isNaN(d.getTime())? null : d.toISOString();
+}
+
+function extractValue(text: string): number | null {
+  const match = text.match(/£\s?([\d,]+)/);
+  if (!match) return null;
+  return parseInt(match[1].replace(/,/g, ''));
 }
 
 async function scrapeEastMidsTenders() {
-  console.log('Starting EastMidsTenders scrape...');
+  console.log('=== EAST MIDS SCRAPER START ===');
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
-  
-  await page.goto('https://www.eastmidstenders.org/procontract/supplier.nsf/frm_opportunity_search_results', { 
-    waitUntil: 'networkidle' 
-  });
 
-  // Filter to Open tenders only
-  await page.selectOption('select[name="oppStatus"]', 'Open').catch(() => {});
-  await page.click('input[value="Search"]').catch(() => {});
-  await page.waitForLoadState('networkidle');
-  await page.waitForSelector('table.rgMasterTable tr, .opportunity', { timeout: 10000 }).catch(() => {});
+  // Open tenders only, sorted newest
+  const url = 'https://www.eastmidstenders.org/procontract/supplier.nsf/frm_opportunity_search_results?openform&sort=opportunity.publish_date&searchfilter=Status:Open';
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-  let pageNum = 1;
-  const allResults: any[] = [];
+  // ProContract uses.opportunity-row
+  await page.waitForSelector('.opportunity-row', { timeout: 15000 }).catch(() => {});
 
-  while (true) {
-    console.log(`EMT Page ${pageNum}`);
-    
-    // ProContract uses RadGrid tables. Try both table rows and div cards
-    const results = await page.$$eval('tr.rgRow, tr.rgAltRow, .opportunity', nodes => 
-      nodes.map(n => {
-        const getText = (sel: string) => n.querySelector(sel)?.textContent?.trim() || '';
-        
-        // Table layout selectors
-        const titleEl = n.querySelector('td a[href*="opportunity"]') || n.querySelector('.opp-title a');
-        const buyer = getText('td[data-label="Organisation"]') || getText('.opp-organisation');
-        const deadline = getText('td[data-label="Closing Date"]') || getText('.opp-deadline');
-        const description = getText('td[data-label="Description"]') || getText('.opp-description');
-        
-        return {
-          title: titleEl?.textContent?.trim() || '',
-          url: (titleEl as HTMLAnchorElement)?.href || '',
-          buyer,
-          description,
-          deadline,
-          source: 'eastmidstenders',
-          status: 'open'
-        };
-      }).filter(r => r.title && r.url)
-    );
+  const results = await page.$$eval('.opportunity-row', nodes => nodes.map(n => {
+    const titleEl = n.querySelector('.opportunity-title a') as HTMLAnchorElement;
+    const orgEl = n.querySelector('.opportunity-organisation');
+    const descEl = n.querySelector('.opportunity-description');
+    const deadlineEl = n.querySelector('.opportunity-deadline');
+    const valueEl = n.querySelector('.opportunity-value');
 
-    console.log(`EMT Page ${pageNum}: ${results.length} results`);
-    if (results.length === 0) break;
-    allResults.push(...results);
-
-    // ProContract pagination - look for next button
-    const nextButton = await page.$('a.rgPageNext, a:has-text("Next")');
-    if (!nextButton) break;
-    
-    const isDisabled = await nextButton.evaluate(el => el.classList.contains('rgPageNextDisabled'));
-    if (isDisabled) break;
-
-    await Promise.all([
-      page.waitForResponse(res => res.url().includes('procontract') && res.status() === 200),
-      nextButton.click()
-    ]);
-    pageNum++;
-  }
-
-  await browser.close();
-  return allResults;
-}
-
-async function run() {
-  const raw = await scrapeEastMidsTenders();
-  console.log(`Total: ${raw.length}. EMT: ${raw.length}, FT: 0`);
-  
-  const tagged = raw.map(tagTender);
-  const tenders = tagged.map(t => ({
-    ...t,
-    deadline: parseUKDate(t.deadline)
+    return {
+      title: titleEl?.textContent?.trim() || '',
+      url: titleEl?.href || '',
+      buyer: orgEl?.textContent?.trim() || '',
+      description: descEl?.textContent?.trim() || '',
+      deadline_raw: deadlineEl?.textContent?.trim() || '',
+      value_raw: valueEl?.textContent?.trim() || '',
+      source: 'eastmidstenders',
+      status: 'open'
+    };
   }));
 
-  if (tenders.length === 0) {
-    console.log('FT: 0 results');
-    console.log('Scrape complete. Upserted: 0, Errors: 0, Total: 0');
+  await browser.close();
+  console.log('EMT Raw results:', results.length);
+
+  const cleaned = results
+   .filter(r => r.title && r.url)
+   .map(r => ({
+     ...r,
+      deadline: parseDate(r.deadline_raw),
+      value_gbp: extractValue(r.value_raw || r.description),
+      cpv_codes: [] // ProContract doesn't expose CPV in list view
+    }))
+   .map(tagTender); // adds is_em_tagged, is_la_tagged, vertical, etc
+
+  console.log('After tag:', cleaned.length);
+  if (cleaned[0]) console.log('Sample:', JSON.stringify(cleaned[0], null, 2));
+
+  if (cleaned.length === 0) {
+    console.log('PIPELINE STOPPED: No tenders');
     return;
   }
 
+  // Drop raw fields before upsert
+  const payload = cleaned.map(({ deadline_raw, value_raw,...rest }) => rest);
+
   const { data, error } = await supabase
-    .from('tenders')
-    .upsert(tenders, { onConflict: 'url' })
-    .select();
-    
+   .from('tenders')
+   .upsert(payload, { onConflict: 'url' })
+   .select();
+
   if (error) console.error('Upsert failed:', error);
-  else console.log(`Scrape complete. Upserted: ${data?.length ?? 0}, Errors: 0, Total: ${data?.length ?? 0}`);
+  else console.log(`Upsert ok: ${data?.length?? 0}`);
 }
 
-run().catch(e => {
+scrapeEastMidsTenders().catch(e => {
   console.error('Scraper crashed:', e);
   process.exit(1);
 });
