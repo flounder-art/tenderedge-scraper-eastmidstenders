@@ -18,3 +18,14 @@ export function mapCpvToTags(cpv: string[]): string[] {
   });
   return Array.from(tags);
 }
+
+export function tagTender(tender: any) {
+  const text = `${tender.title} ${tender.buyer} ${tender.description}`.toLowerCase();
+  tender.is_vegan = /vegan|plant-based|meat-free/.test(text);
+  tender.is_la_tagged = /council|authority|borough/.test(text);
+  tender.is_em_tagged = /leicester|nottingham|derby|lincoln/.test(text);
+  tender.is_social_care_tagged = /social care|care home|domiciliary/.test(text);
+  tender.is_lgr_tagged = /local government|reorganisation|lgr/.test(text);
+  tender.vertical = tender.is_social_care_tagged && tender.is_la_tagged ? 'la_social_care' : 'other';
+  return tender;
+}
