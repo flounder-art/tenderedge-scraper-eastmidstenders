@@ -11,13 +11,12 @@ const supabase = createClient(
 // === CONFIG ===
 const BASE_URL = 'https://www.eastmidstenders.org';
 const LIST_URL = `${BASE_URL}/procontract/supplier.nsf/frm_opportunity_search_results?openform&sort=opportunity.publish_date&searchfilter=Status:Open`;
-const CONCURRENCY = 3; // parallel detail page fetches
+const CONCURRENCY = 3;
 const TIMEOUT = 30000;
 
 // === HELPERS ===
 function parseDate(dateStr: string): string | null {
   if (!dateStr) return null;
-  // Handles "23/05/2026 12:00", "23 May 2026", "23rd May 2026"
   const cleaned = dateStr.replace(/at.*|st|nd|rd|th/g, '').trim();
   const d = new Date(cleaned);
   return isNaN(d.getTime()) ? null : d.toISOString();
@@ -25,7 +24,6 @@ function parseDate(dateStr: string): string | null {
 
 function extractValue(text: string): number | null {
   if (!text) return null;
-  // Matches £1,000,000 or £1m or 1,000,000 GBP
   const m = text.match(/£\s?([\d,]+(?:\.\d+)?)\s?(m|million)?|([\d,]+)\s?GBP/i);
   if (!m) return null;
   let num = parseFloat((m[1] || m[3]).replace(/,/g, ''));
@@ -72,7 +70,6 @@ async function scrapeEastMidsTenders() {
   await safeGoto(page, LIST_URL);
   await page.waitForSelector('.opportunity-row, .searchresult', { timeout: 15000 }).catch(() => {});
 
-  // 1. Get list view data
   const listResults = await page.$$eval('.opportunity-row, .searchresult', nodes =>
     nodes.map(n => {
       const titleEl = n.querySelector('.opportunity-title a, .title a') as HTMLAnchorElement;
@@ -102,7 +99,6 @@ async function scrapeEastMidsTenders() {
     return;
   }
 
-  // 2. Enrich with detail pages - concurrent but limited
   const limit = pLimit(CONCURRENCY);
   const detailPage = await context.newPage();
 
@@ -111,16 +107,12 @@ async function scrapeEastMidsTenders() {
       limit(async () => {
         try {
           await safeGoto(detailPage, r.url);
-          // Grab full detail HTML for parsing
           const detailData = await detailPage.evaluate(() => {
             const getText = (sel: string) =>
               document.querySelector(sel)?.textContent?.trim() || '';
-
-            // ProContract uses tables for key data
             const tableText = Array.from(document.querySelectorAll('table tr'))
               .map(tr => tr.textContent)
               .join('\n');
-
             return {
               full_text: document.body.innerText,
               value: getText('td:has-text("Value") + td, td:has-text("Estimated") + td'),
@@ -136,4 +128,19 @@ async function scrapeEastMidsTenders() {
             description: r.description || detailData.full_text.slice(0, 2000),
             value_raw: r.value_raw || detailData.value,
             cpv_raw: detailData.cpv,
-            contact_email
+            contact_email: extractEmail(detailData.contact || detailData.table_text),
+            procedure_type: detailData.procedure
+          };
+        } catch (e: any) {
+          console.log('Detail fail:', r.url, e.message);
+          return r;
+        }
+      })
+    )
+  );
+
+  await browser.close();
+
+  const cleaned = enriched
+    .filter(r => r.title && r.url)
+    .
