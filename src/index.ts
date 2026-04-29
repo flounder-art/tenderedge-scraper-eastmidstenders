@@ -143,4 +143,32 @@ async function scrapeEastMidsTenders() {
 
   const cleaned = enriched
     .filter(r => r.title && r.url)
-    .
+    .map(r => ({
+      ...r,
+      deadline: parseDate(r.deadline_raw),
+      value: extractValue(r.value_raw),
+      cpv_codes: extractCPV(r.cpv_raw || ''),
+      source: 'eastmidstenders',
+      status: 'open'
+    }))
+    .map(r => tagTender(r));
+
+  console.log(`EMT Cleaned records: ${cleaned.length}`);
+
+  if (cleaned.length) {
+    const { error } = await supabase
+      .from('tenders')
+      .upsert(cleaned, { onConflict: 'url' });
+    if (error) console.error('Supabase upsert error:', error.message);
+    else console.log(`EMT Upserted ${cleaned.length} records`);
+  }
+
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  console.log(`=== EMT SCRAPER DONE in ${elapsed}s ===`);
+}
+
+scrapeEastMidsTenders().catch(err => {
+  console.error('EMT scraper fatal error:', err);
+  process.exit(1);
+});
+
