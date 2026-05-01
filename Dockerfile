@@ -1,11 +1,11 @@
-FROM mcr.microsoft.com/playwright:v1.47.0-jammy
+FROM mcr.microsoft.com/playwright:v1.48.0-jammy
 
 WORKDIR /app
 
 COPY package*.json ./
 RUN npm install
+RUN npx playwright install --with-deps
 
 COPY . .
-RUN npm run build
 
 CMD ["npm", "start"]
