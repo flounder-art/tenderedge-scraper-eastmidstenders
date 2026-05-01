@@ -1,18 +1,244 @@
-{
-  "name": "scraper-eastmidstenders",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "tsx src/index.ts",
-    "start": "tsx src/index.ts"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.45.0",
-    "playwright": "^1.48.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.7.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
-  }
+git add package.json
+git commit -m "Fix package.json with name, version, correct deps"
+git push
+
+RUN npm install  → success
+RUN npx playwright install --with-deps  → success
+nano Dockerfile
+git add Dockerfile
+git commit -m "Fix Dockerfile for tsx, remove build step"
+git push
+cd /Users/barbarakoomson/Desktop/temp-scraper/tenderedge-scraper-eastmidstenders
+mkdir -p src
+cat > src/cpv_registry.ts << 'EOF'
+export const EM_COUNCILS = [
+  'Nottinghamshire County Council',
+  'Derbyshire County Council', 
+  'Leicestershire County Council',
+  'Lincolnshire County Council',
+  'Rutland County Council',
+  'Nottingham City Council',
+  'Derby City Council',
+  'Leicester City Council',
+];
+
+export const SOCIAL_CARE_CPV = ['85300000', '85310000', '85312000', '85312100', '85320000'];
+export const NHS_CPV = ['85100000', '85110000', '85140000', '33600000'];
+export const LGR_KEYWORDS = ['reorganisation', 'unitary', 'transition', 'local government reorganisation'];
+export const VEGAN_KEYWORDS = ['vegan', 'plant-based', 'meat-free', 'vegetarian catering'];
+
+export function tagTender(t: any) {
+  const title = (t.title + ' ' + (t.description || '')).toLowerCase();
+  const buyer = t.buyer || '';
+  t.is_em_tagged = EM_COUNCILS.some(c => buyer.includes(c));
+  t.is_la_tagged = buyer.toLowerCase().includes('council');
+  t.is_social_care_tagged = SOCIAL_CARE_CPV.some(cpv => t.cpv_codes?.includes(cpv));
+  t.is_lgr_tagged = LGR_KEYWORDS.some(k => title.includes(k));
+  t.is_vegan = VEGAN_KEYWORDS.some(k => title.includes(k));
+  
+  if (t.is_social_care_tagged && t.is_la_tagged) t.vertical = 'la_social_care';
+  else if (NHS_CPV.some(cpv => t.cpv_codes?.includes(cpv))) t.vertical = 'nhs';
+  else if (t.is_lgr_tagged) t.vertical = 'lgr_transition';
+  else t.vertical = 'other';
+  
+  return t;
 }
+EOF
+
+import { tagTender } from './cpv_registry.js'; // note the .js extension
+git add src/cpv_registry.ts
+git commit -m "Add cpv_registry with tagTender export"
+git push
+import { tagTender } from './cpv_registry.js'; // note the .js extension[C[C[C
+
+MBP tenderedge-scraper-eastmidstenders % cat > package.json
+git add package.json
+git commit -m "Fix package.json with name, version, correct deps"
+git push
+
+RUN npm install  → success
+RUN npx playwright install --with-deps  → success
+nano Dockerfile
+git add Dockerfile
+git commit -m "Fix Dockerfile for tsx, remove build step"
+git push
+cd /Users/barbarakoomson/Desktop/temp-scraper/tenderedge-scraper-eastmidstenders
+mkdir -p src
+cat > src/cpv_registry.ts << 'EOF'
+export const EM_COUNCILS = [
+  'Nottinghamshire County Council',
+  'Derbyshire County Council', 
+  'Leicestershire County Council',
+  'Lincolnshire County Council',
+  'Rutland County Council',
+  'Nottingham City Council',
+  'Derby City Council',
+  'Leicester City Council',
+];
+
+export const SOCIAL_CARE_CPV = ['85300000', '85310000', '85312000', '85312100', '85320000'];
+export const NHS_CPV = ['85100000', '85110000', '85140000', '33600000'];
+export const LGR_KEYWORDS = ['reorganisation', 'unitary', 'transition', 'local government reorganisation'];
+export const VEGAN_KEYWORDS = ['vegan', 'plant-based', 'meat-free', 'vegetarian catering'];
+
+export function tagTender(t: any) {
+  const title = (t.title + ' ' + (t.description || '')).toLowerCase();
+  const buyer = t.buyer || '';
+  t.is_em_tagged = EM_COUNCILS.some(c => buyer.includes(c));
+  t.is_la_tagged = buyer.toLcouncil');
+  t.is_social_care_tagged = SOCIAL_CARE_CPV.some(cpv => t.cpv_codes?.includes(cpv));
+  t.is_lgr_tagged = LGR_KEYWORDS.some(k => title.includes(k));
+  t.is_vegan = VEGAN_KEYWORDS.some(k => title.includes(k));
+  
+  if (t.is_social_care_tagged && t.is_la_tagged) t.vertical = 'la_social_care';
+  else if (NHS_CPV.some(cpv => t.cpv_codes?.includes(cpv))) t.vertical = 'nhs';
+  else if (t.is_lgr_tagged) t.vertical = 'lgr_transition';
+  else t.vertical = 'other';
+  
+  return t;
+}
+EOF
+
+BUTTON HIERARCHY FIX:
+Primary button — make this bold, filled, prominent:
+
+Get my first box →
+
+Secondary button — smaller, outlined, less visual weight:
+
+🛒 Add to cart
+
+Third button — text link only, no border:
+
+🎁 Send as a gift
+
+
+PRODUCT NAME FIX:
+
+"Build-your-Box-5" → Build Your Box — 5 treats
+"Build-your-Box-3" → Build Your Box — 3 treats
+
+
+SUBSCRIBE PAGE TRUST LINE:
+Add this directly underneath the primary button on every card:
+
+No commitment. Cancel or pause any time.
+
+That single line removes the biggest objection at the exact moment someone is about to click. It's the difference between hesitation and conversion.
+
+GIFT BUTTON — rewrite:
+Current: "Give as a Gift"
+Replace with:
+
+🎁 Gift this box →
+
+Shorter, warmer, more action-oriented.
+
+The visual priority should read as:
+
+Get my first box → — big, filled, your brand pink
+Add to cart — smaller, outlined
+Gift this box → — text only, subtle
+
+One eye, o
+
+
+
+import { tagTender } from './cpv_registry.js'; // note the .js extension
+git add src/cpv_registry.ts
+git commit -m "Add cpv_registry with tagTender export"
+git push
+import { tagTender } from './cpv_registry.js'; // note the .js extensio^[[C^[[C^[[C                         
+
+MBP tenderedge-scraper-eastmidstenders % cat > package.json
+git add package.json
+git commit -m "Fix package.json with name, version, correct deps"
+git push
+
+RUN npm install  → success
+RUN npx playwright install --with-deps  → success
+nano Dockerfile
+git add Dockerfile
+git commit -m "Fix Dockerfile for tsx, remove build step"
+git push
+cd /Users/barbarakoomson/Desktop/temp-scraper/tenderedge-scraper-eastmidstenders
+mkdir -p src
+cat > src/cpv_registry.ts << 'EOF'
+export const EM_COUNCILS = [
+  'Nottinghamshire County Council',
+  'Derbyshire County Council', 
+  'Leicestershire County Council',
+  'Lincolnshire County Council',
+  'Rutland County Council',
+  'Nottingham City Council',
+  'Derby City Council',
+  'Leicester City Council',
+];
+
+export const SOCIAL_CARE_CPV = ['85300000', '85310000', '85312000', '85312100', '85320000'];
+export const NHS_CPV = ['85100000', '85110000', '85140000', '33600000'];
+export const LGR_KEYWORDS = ['reorganisation', 'unitary', 'transition', 'local goverxport const VEGAN_KEYWORDS = ['vegan', 'plant-based', 'meat-free', 'vegetarian catering'];
+
+export function tagTender(t: any) {
+  const title = (t.title + ' ' + (t.description || '')).toLowerCase();
+  const buyer = t.buyer || '';
+  t.is_em_tagged = EM_COUNCILS.some(c => buyer.includes(c));
+  t.is_la_tagged = buyer.toLcouncil');
+  t.is_social_care_tagged = SOCIAL_CARE_CPV.some(cpv => t.cpv_codes?.includes(cpv));
+  t.is_lgr_tagged = LGR_KEYWORDS.some(k => title.includes(k));
+  t.is_vegan = VEGAN_KEYWORDS.some(k => title.includes(k));
+  
+  if (t.is_social_care_tagged && t.is_la_tagged) t.vertical = 'la_social_care';
+  else if (NHS_CPV.some(cpv => t.cpv_codes?.includes(cpv))) t.vertical = 'nhs';
+  else if (t.is_lgr_tagged) t.vertical = 'lgr_transition';
+  else t.vertical = 'other';
+  
+  return t;
+}
+EOF
+
+git add src/cpv_registry.ts
+git commit -m "Add cpv_registry with tagTender export"
+git push
+
+
+const url = 'https://www.contractsfinder.service.gov.uk/Search/Results?location=East+Midlands&cpv=85300000';
+git add src/index.ts
+git commit -m "Add EastMidsTenders scraper logic"
+git push
+git add src/index.ts
+git commit -m "Add EastMidsTenders scraper logic"
+git push
+npm install p-limit
+git add src/index.ts
+git commit -m "CEO-grade EMT scraper: concurrency, value, email, CPV"
+git push
+cd tenderedge-scraper-eastmidstenders
+npm install p-limit
+git add package.json package-lock.json
+git add src/index.ts src/cpv_registry.ts
+git commit -m "CEO-grade EMT scraper with detail enrichment"
+git push
+git clone https://github.com/flounder-art/tenderedge-scraper-find-a-tender.git
+cd tenderedge-scraper-find-a-tender
+git add .
+git commit -m "Initial Find a Tender scraper"
+git push origin main
+cp -r tenderedge-scraper-eastmidstenders tenderedge-scraper-fts
+git clone https://github.com/flounder-art/sweetly-protocol.git
+cd sweetly-protocol
+mkdir -p normalizer/src
+git add normalizer/
+git commit -m "Add normalizer service"
+git push origin main
+cd sweetly-protocol
+rm railway.toml
+git add -A
+git commit -m "Remove invalid railway.toml"
+git push origin main
+# Mac/Linux
+pkill -f node
+pkill -f npm
+
+# Check what's stuck
+ps aux | grep node
